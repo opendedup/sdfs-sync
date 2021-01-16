@@ -1,0 +1,14 @@
+server:
+  url: "sdfss://localhost:6442"
+  pass: password
+  disable_trust: true
+listener:
+  download: true
+  upload: false
+  write: false
+  delete: false
+gcs:
+  credentials: "/home/samsilverberg/keys/sdfs-gcp-testing-487d45315650.json"
+  bucket: "super-pedro-1980"
+  enabled: true
+  base_path: ""
