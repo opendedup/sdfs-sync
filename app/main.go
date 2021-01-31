@@ -20,16 +20,20 @@ func main() {
 	// Scans the arg list and sets up flags
 	debug := flag.Bool("debug", false, "print debugging messages.")
 	daemonize := flag.Bool("d", false, "daemonize mount")
+	flag.Bool("help", false, "print help")
 	configFile := flag.String("config", "config.yaml", "The configuration yaml for this setup.")
 	flag.Parse()
-	if flag.NArg() < 1 {
+	if isFlagPassed("help") {
 		fmt.Printf("usage: %s options\n", path.Base(os.Args[0]))
 		fmt.Printf("\noptions:\n")
 		flag.PrintDefaults()
-		os.Exit(2)
+		os.Exit(0)
 	}
 	if !isFlagPassed("config") {
 		fmt.Printf("--config must be set")
+		fmt.Printf("\noptions:\n")
+		flag.PrintDefaults()
+		os.Exit(2)
 	}
 	cfg, err := sdfs.NewConfig(*configFile)
 	if err != nil {
@@ -66,6 +70,8 @@ func main() {
 		log.Print("sync daemon started")
 		start(listener)
 	} else {
+		log.Print("- - - - - - - - - - - - - - -")
+		log.Print("sync started")
 		start(listener)
 	}
 

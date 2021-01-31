@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -12,11 +11,14 @@ import (
 
 	"io/ioutil"
 
+	"path/filepath"
+
 	storage "cloud.google.com/go/storage"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/olekukonko/tablewriter"
 	sdfs "github.com/opendedup/sdfs-client-go/api"
 	spb "github.com/opendedup/sdfs-client-go/sdfs"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"gopkg.in/yaml.v2"
@@ -25,28 +27,36 @@ import (
 //Config is the configuration of the Connection
 type Config struct {
 	Server struct {
-		ServerURL    string `yaml:"url" required:"true"`
-		Password     string `yaml:"password" default:""`
-		DisableTrust bool   `yaml:"disable_trust"`
+		ServerURL    string `yaml:"url" default:"sdfss://localhost:6442" envconfig:"URL"`
+		Password     string `yaml:"password" default:"" envconfig:"PASSWORD"`
+		DisableTrust bool   `yaml:"disable_trust" envconfig:"DISABLE_TRUST"`
 	} `yaml:"server"`
 	Listener struct {
-		Download bool `yaml:"download"`
-		Upload   bool `yaml:"upload"`
-		Write    bool `yaml:"write"`
-		Delete   bool `yaml:"delete"`
+		Download bool     `yaml:"download" envconfig:"DOWNLOAD"`
+		Upload   bool     `yaml:"upload" envconfig:"UPLOAD"`
+		Write    bool     `yaml:"write" envconfig:"WRITE"`
+		Delete   bool     `yaml:"delete" envconfig:"READ"`
+		Ignore   []string `yaml:"ignore" default:".sdfsclitemp/"`
 	} `yaml:"listener"`
 	GCS struct {
 		Credentials string `yaml:"credentials" envconfig:"GOOGLE_APPLICATION_CREDENTIALS"`
-		BucketName  string `yaml:"bucket"`
-		ProjectID   string `yaml:"projectid"`
-		BasePath    string `yaml:"base_path"`
-		Enabled     bool   `yaml:"enabled"`
-		Region      string `yaml:"region" default:"US"`
-		TempDir     string `yaml:"tempdir" default:"/tmp" `
-		Retry       int    `yaml:"retry" default:"3"`
+		BucketName  string `yaml:"bucket" envconfig:"GCS_BUCKET"`
+		ProjectID   string `yaml:"projectid" envconfig:"GCS_PROJECT_ID"`
+		BasePath    string `yaml:"base_path" evnconfig:"GCS_BASE_PATH"`
+		Enabled     bool   `yaml:"enabled" envconfig:"GCS_ENABLED"`
+		Region      string `yaml:"region" default:"US" envconfig:"GCS_REGION"`
+		TempDir     string `yaml:"tempdir" default:"/tmp" envconfig:"GCS_TEMP_DIR"`
+		Retry       int    `yaml:"retry" default:"3" envconfig:"GCS_RETRY"`
 		client      *storage.Client
 		bucket      *storage.BucketHandle
-	}
+	} `yaml:"gcs"`
+	FOLDER struct {
+		Path        string `yaml:"base_path" envconfig:"LOCAL_PATH"`
+		Owner       int64  `yaml:"owner" default:"0" envconfig:"LOCAL_OWNER"`
+		Group       int64  `yaml:"group" default:"0" envconfig:"LOCAL_GROUP"`
+		Permissions int32  `yaml:"permissions" default:"0" envconfig:"LOCAL_PERMISSIONS"`
+		Enabled     bool   `yaml:"enabled" envconfig:"LOCAL_ENABLED"`
+	} `yaml:"folder"`
 }
 
 //Listener is the listener object for executing on changes
@@ -75,7 +85,7 @@ func (n *Listener) Listen(ctx context.Context) error {
 	for {
 		fInfo := <-c
 		if fInfo == nil {
-			log.Printf("done")
+			log.Info("done")
 			return nil
 		}
 		var files []string
@@ -111,7 +121,6 @@ func (n *Listener) Listen(ctx context.Context) error {
 					table.Append([]string{"Symlink", fmt.Sprintf("%t", v.Symlink)})
 					table.Append([]string{"Symlink Path", fmt.Sprintf("%s", v.SymlinkPath)})
 					table.Append([]string{"File Type", fmt.Sprintf("%s", v.Type)})
-
 				} else {
 					table.Append([]string{"Size", strconv.FormatInt(v.Size, 10)})
 					table.Append([]string{"File Path", v.FilePath})
@@ -135,20 +144,104 @@ func (n *Listener) Listen(ctx context.Context) error {
 
 				table.Render()
 			}
-			if fInfo.Action == spb.Syncaction_DOWNLOAD && n.config.Listener.Download {
-
+			ignore := false
+			for _, s := range n.config.Listener.Ignore {
+				if strings.HasPrefix(v.FilePath, s) {
+					ignore = true
+					log.Debugf("ignoring %s because it starts with %s", v.FilePath, s)
+					break
+				}
 			}
-			if fInfo.Action == spb.Syncaction_UPLOAD && n.config.Listener.Upload {
+			if !ignore {
+				if fInfo.Action == spb.Syncaction_DOWNLOAD && n.config.Listener.Download {
+					if n.config.GCS.Enabled {
+						n.UploadToGCS(ctx, v)
+					}
+					if n.config.FOLDER.Enabled {
+						n.CopyLocally(ctx, v)
+					}
 
-			}
-			if fInfo.Action == spb.Syncaction_WRITE && n.config.Listener.Write {
+				}
+				if fInfo.Action == spb.Syncaction_UPLOAD && n.config.Listener.Upload {
+					if n.config.GCS.Enabled {
+						n.UploadToGCS(ctx, v)
+					}
+					if n.config.FOLDER.Enabled {
+						n.CopyLocally(ctx, v)
+					}
 
-			}
-			if fInfo.Action == spb.Syncaction_DELETE && n.config.Listener.Delete {
+				}
+				if fInfo.Action == spb.Syncaction_WRITE && n.config.Listener.Write {
+					if n.config.GCS.Enabled {
+						n.UploadToGCS(ctx, v)
+					}
+					if n.config.FOLDER.Enabled {
+						n.CopyLocally(ctx, v)
+					}
 
+				}
+				if fInfo.Action == spb.Syncaction_DELETE && n.config.Listener.Delete {
+
+				}
 			}
 		}
 	}
+}
+
+//CopyLocally creates a local copy of the file
+func (n *Listener) CopyLocally(ctx context.Context, resp *spb.FileInfoResponse) error {
+	file := filepath.Join(n.config.FOLDER.Path, resp.FilePath)
+	parent := filepath.Dir(file)
+	err := os.MkdirAll(parent, os.ModePerm)
+	if err != nil {
+		log.Fatalf("creating directory %s : %v", parent, err)
+		return fmt.Errorf("creating directory error %s : %v", file, err)
+	}
+	log.Debugf("Writing %s : %s", resp.FilePath, file)
+
+	n.con.Download(ctx, resp.FilePath, file)
+	log.Debugf("File %v written.\n", resp.FilePath)
+	permissions := resp.Permissions
+	group := resp.GroupId
+	user := resp.UserId
+	if n.config.FOLDER.Permissions > 0 {
+		permissions = n.config.FOLDER.Permissions
+	} else {
+		b := fmt.Sprintf("%04d", permissions)
+
+		z, err := strconv.ParseUint(b, 8, 32)
+		permissions = int32(z)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+	if permissions > 0 {
+
+		log.Debugf("Setting Permssions : %d", int(permissions))
+		err = os.Chmod(file, os.FileMode(int(permissions)))
+
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	if n.config.FOLDER.Group > 0 {
+		group = n.config.FOLDER.Group
+	}
+	if n.config.FOLDER.Owner > 0 {
+		user = n.config.FOLDER.Owner
+	}
+
+	// Change file ownership.
+	if user > 0 && group > 0 {
+		log.Debugf("Setting UID : %d, GID : %d", int(user), int(group))
+		err = os.Chown(file, int(user), int(group))
+	}
+
+	if err != nil {
+		log.Error(err)
+	}
+	return nil
+
 }
 
 //UploadToGCS uploads a file to GCS
@@ -195,14 +288,14 @@ func (n *Listener) CreateGCSBucket(ctx context.Context) error {
 			}); err != nil {
 				return fmt.Errorf("Failed to create bucket: %v", err)
 			}
-			log.Printf("Bucket %v created.\n", n.config.GCS.BucketName)
+			log.Infof("Bucket %v created.\n", n.config.GCS.BucketName)
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("Issues setting up Bucket(%q) Objects(): %v Double check project id", attrs.Name, err)
 		}
 		if attrs.Name == n.config.GCS.BucketName {
-			log.Printf("Bucket %v exists\n", n.config.GCS.BucketName)
+			log.Infof("Bucket %v exists\n", n.config.GCS.BucketName)
 			return nil
 		}
 	}
@@ -234,12 +327,12 @@ func NewConfig(configPath string) (*Config, error) {
 	defer file.Close()
 	// Init environmental variables
 	err = envconfig.Process("", config)
+
 	if err != nil {
 		return nil, err
 	}
 	// Init new YAML decode
 	d := yaml.NewDecoder(file)
-
 	// Start YAML decoding from file
 	if err := d.Decode(&config); err != nil {
 		return nil, err
@@ -255,6 +348,11 @@ func NewConfig(configPath string) (*Config, error) {
 // config file is the given config file. This node implements all NodeXxxxer
 // operations available.
 func NewsdfsListener(config string, debug bool) (*Listener, error) {
+	if debug {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 	var err error
 	err = ValidateConfigPath(config)
 	if err != nil {

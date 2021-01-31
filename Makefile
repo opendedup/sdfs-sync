@@ -5,7 +5,7 @@ GOARCH := $(shell go env GOARCH)
 GOOS := $(shell go env GOOS)
 
 VERSION ?= $(shell git describe --tags)
-TAG ?= "sdfs/sdfscli:$(VERSION)"
+TAG ?= "sdfs/sdfssync:$(VERSION)"
 
 all: build
 
@@ -34,23 +34,23 @@ lint:
 
 
 
-# Builds sdfscli locally.
+# Builds sdfssync locally.
 build:
 	@mkdir -p $(PWD)/build
-	@echo "Building sdfscli binary to '$(PWD)/build/sdfscli'"
-	@go build -o ./build/sdfscli app/* 
+	@echo "Building sdfssync binary to '$(PWD)/build/sdfssync'"
+	@go build -o ./build/sdfssync app/* 
 
-# Builds sdfscli and installs it to $GOPATH/bin.
+# Builds sdfssync and installs it to $GOPATH/bin.
 install: build
-	@echo "Installing sdfscli binary to '$(GOPATH)/bin/sdfscli'"
-	@mkdir -p $(GOPATH)/bin && cp -f $(PWD)/build/sdfscli $(GOPATH)/bin/sdfscli
-	@echo "Installation successful. To learn more, try \"sdfscli\"."
+	@echo "Installing sdfssync binary to '$(GOPATH)/bin/sdfssync'"
+	@mkdir -p $(GOPATH)/bin && cp -f $(PWD)/build/sdfssync $(GOPATH)/bin/sdfssync
+	@echo "Installation successful. To learn more, try \"sdfssync\"."
 
 clean:
 	@echo "Cleaning up all the generated files"
 	@find . -name '*.test' | xargs rm -fv
 	@find . -name '*~' | xargs rm -fv
-	@rm -rvf sdfscli
+	@rm -rvf sdfssync
 	@rm -rvf build
 	@rm -rvf release
 	@rm -rvf .verify*

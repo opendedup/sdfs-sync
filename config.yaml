@@ -1,14 +1,20 @@
 server:
-  url: "sdfss://localhost:6442"
+  url: "sdfs://localhost:6442"
   pass: password
   disable_trust: true
 listener:
-  download: true
-  upload: false
+  download: false
+  upload: true
   write: false
   delete: false
+  ignore:
+  - ".sdfsclitemp/"
 gcs:
-  credentials: "/home/samsilverberg/keys/sdfs-gcp-testing-487d45315650.json"
-  bucket: "super-pedro-1980"
-  enabled: true
+  credentials: "/home/sam/keys/hybrics-b39620c158ca.json"
+  bucket: "ninjasmith24221"
+  enabled: false
   base_path: ""
+  projectid: "hybrics"
+folder:
+  base_path: "/home/sam/sync"
+  enabled: true

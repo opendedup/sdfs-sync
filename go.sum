@@ -342,6 +342,8 @@ github.com/opendedup/sdfs-client-go v0.1.31 h1:8bEWwAx5P/G855CyLT/rF93qgBatww/5p
 github.com/opendedup/sdfs-client-go v0.1.31/go.mod h1:LBiXVWkIs+dIajcME3ZmHJtKTGyhGV4UUvsEEUkgg6E=
 github.com/opendedup/sdfs-client-go v0.1.32 h1:kFwpYyDQvz6pH/jm0tJE+8KjZug3pK0YppdopD9DlDY=
 github.com/opendedup/sdfs-client-go v0.1.32/go.mod h1:LBiXVWkIs+dIajcME3ZmHJtKTGyhGV4UUvsEEUkgg6E=
+github.com/opendedup/sdfs-client-go v0.1.33 h1:m0ogjyJjUtwa2nZ8F027Eh7MYk6gORKOqq6Aysh01iw=
+github.com/opendedup/sdfs-client-go v0.1.33/go.mod h1:LBiXVWkIs+dIajcME3ZmHJtKTGyhGV4UUvsEEUkgg6E=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/getopt v0.0.0-20180729010549-6fdd0a2c7117/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
